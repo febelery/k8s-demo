@@ -1,0 +1,47 @@
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: redirect-https
+  namespace: traefik-ingress
+spec:
+  redirectScheme:
+    scheme: https
+
+---
+
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: traefik-dashboard
+  namespace: traefik-ingress
+spec:
+  entryPoints:
+    - web
+  routes:
+  - match: Host(`traefik.febelery.com`)
+    kind: Rule
+    services:
+      - name: api@internal
+        kind: TraefikService
+    middlewares: 
+    - name: redirect-https
+
+---
+
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: traefik-dashboard-tls
+  namespace: traefik-ingress
+spec:
+  entryPoints:
+   - websecure
+  routes:
+  - match: Host(`traefik.febelery.com`)
+    kind: Rule
+    services:
+    - name: api@internal
+      kind: TraefikService
+  tls:
+    domains:
+    - main: "*.febelery.com"

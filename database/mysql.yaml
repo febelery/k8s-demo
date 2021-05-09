@@ -1,0 +1,134 @@
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: mysql
+  namespace: database
+  labels:
+    app: mysql
+spec:
+  capacity:
+    storage: 20Gi
+  accessModes:
+  - ReadWriteMany
+  persistentVolumeReclaimPolicy: Delete
+  nfs:
+    server: 192.168.1.7
+    path: /data/nfs/mysql
+
+---
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mysql
+  namespace: database
+spec:
+  accessModes:
+  - ReadWriteMany
+  resources:
+    requests:
+      storage: 20Gi
+  selector:
+    matchLabels:
+      app: mysql
+
+---
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mysql-config
+  namespace: database
+data:
+  my.cnf: |-
+    [client]
+    default-character-set=utf8mb4
+    [mysql]
+    default-character-set=utf8mb4
+    [mysqld]
+    max_connections = 2000
+    secure_file_priv=/var/lib/mysql
+    sql_mode=STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: database
+  name: mysql
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql
+  strategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      containers:
+      - name: mysql
+        image: mysql:latest
+        volumeMounts:                               
+        - name: time-zone                          
+          mountPath: /etc/localtime              
+        - name: mysql-data
+          mountPath: /var/lib/mysql               
+        - name: config
+          mountPath: /etc/mysql/conf.d/my.cnf
+        ports:
+        - containerPort: 3306                         
+        env:                                                  
+        - name: MYSQL_ROOT_PASSWORD
+          value: "root"
+      volumes:                                            
+      - name: time-zone 
+        hostPath:
+          path: /etc/localtime                       
+      - name: mysql-data
+        persistentVolumeClaim:
+          claimName: mysql
+      - name: config
+        configMap:
+          name: mysql-config
+
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql
+  namespace: database
+spec:
+  ports:
+  - name: mysql
+    port: 3306
+    protocol: TCP
+  selector:
+    app: mysql
+
+
+---
+
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRouteTCP
+metadata:
+  name: mysql-traefik-tcp
+  namespace: database
+spec:
+  entryPoints:
+  - mysql
+  routes:
+  - match: HostSNI(`*`)
+    services:
+    - name: mysql
+      port: 3306
+
+# nfs 配置 *(rw,insecure,sync,no_subtree_check,no_root_squash)
+# at5679v5u@aliyun.com
+# kubectl create secret generic traefik-alidns-secret --from-literal=ALICLOUD_ACCESS_KEY=LTAI5tQNWeB3RZDHpKr9R6J3 --from-literal=ALICLOUD_SECRET_KEY=izNUk6zdO5SL2WS7nwM4EVRjhsSxHv --from-literal=ALICLOUD_REGION_ID=cn-beijing -n treafik-ingress

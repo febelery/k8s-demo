@@ -1,0 +1,195 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: gitlab
+  namespace: devops
+  labels:
+    app: gitlab
+spec:
+  capacity:          
+    storage: 80Gi
+  accessModes:       
+  - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  mountOptions:
+  - hard
+  - nfsvers=4.1    
+  nfs:
+    server: 192.168.1.7
+    path: /data/nfs/gitlab
+---
+
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: gitlab
+  namespace: devops
+spec:
+  resources:
+    requests:
+      storage: 80Gi
+  accessModes:
+  - ReadWriteOnce
+  selector:
+    matchLabels:
+      app: gitlab
+
+---
+
+# 前置条件，需要创建 postgresql 和 redis
+# 一定要在postgresql中新建这里需要的数据库
+# 不要用官网的镜像
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: gitlab
+  namespace: devops
+  labels:
+    name: gitlab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: gitlab
+  template:
+    metadata:
+      name: gitlab
+      labels:
+        name: gitlab
+    spec:
+      containers:
+      - name: gitlab
+        image: sameersbn/gitlab:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: ssh
+          containerPort: 22
+        - name: http
+          containerPort: 80
+        env:
+        - name: TZ
+          value: Asia/Shanghai
+        - name: GITLAB_TIMEZONE
+          value: Beijing
+        - name: GITLAB_SECRETS_DB_KEY_BASE
+          value: long-and-random-alpha-numeric-string
+        - name: GITLAB_SECRETS_SECRET_KEY_BASE
+          value: long-and-random-alpha-numeric-string
+        - name: GITLAB_SECRETS_OTP_KEY_BASE
+          value: long-and-random-alpha-numeric-string
+        - name: GITLAB_ROOT_PASSWORD
+          value: Gitlab12345
+        - name: GITLAB_ROOT_EMAIL 
+          value: febelery@gitlab.com
+        - name: GITLAB_HOST           
+          value: 'gitlab.febelery.com'
+        - name: GITLAB_PORT        
+          value: '80'                   
+        - name: GITLAB_SSH_PORT   
+          value: '22'
+        - name: GITLAB_NOTIFY_ON_BROKEN_BUILDS
+          value: 'true'
+        - name: GITLAB_NOTIFY_PUSHER
+          value: 'false'
+        - name: DB_TYPE
+          value: postgres
+        - name: DB_HOST
+          value: pgsql.database.svc.cluster.local
+        - name: DB_PORT
+          value: '5432'
+        - name: DB_USER
+          value: pgsqladmin
+        - name: DB_PASS
+          value: pgsqlpwd
+        - name: DB_NAME
+          value: gitlab_production
+        - name: REDIS_HOST
+          value: redis.database.svc.cluster.local
+        - name: REDIS_PORT
+          value: '6379'
+        resources: 
+          requests:
+            cpu: 2
+            memory: 256Mi
+          limits:
+            cpu: 2
+            memory: 2Gi
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+            scheme: HTTP
+          initialDelaySeconds: 300
+          timeoutSeconds: 5
+          periodSeconds: 10
+          successThreshold: 1
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+            scheme: HTTP
+          initialDelaySeconds: 5
+          timeoutSeconds: 30
+          periodSeconds: 10
+          successThreshold: 1
+          failureThreshold: 3
+        volumeMounts:
+        - name: data
+          mountPath: /home/git/data
+        - name: localtime
+          mountPath: /etc/localtime
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: gitlab
+      - name: localtime
+        hostPath:
+          path: /etc/localtime
+
+---
+
+kind: Service
+apiVersion: v1
+metadata:
+  name: gitlab
+  namespace: devops
+  labels:
+    name: gitlab
+spec:
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+    - name: ssh
+      port: 22
+      targetPort: ssh
+  selector:
+    name: gitlab
+
+---
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: gitlab
+  namespace: devops
+  annotations:
+    kubernetes.io/ingress.class: traefik
+spec:
+  tls:
+    - hosts:
+        - gitlab.febelery.com
+      secretName: default-token-hdf2g # 随便在secret中挑选的一个
+  rules:
+  - host: gitlab.febelery.com
+    http:
+      paths:
+      - pathType: Prefix
+        path: "/"
+        backend:
+          service:
+            name: gitlab
+            port:
+              number: 80
+        

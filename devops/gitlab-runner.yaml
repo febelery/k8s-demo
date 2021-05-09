@@ -1,0 +1,158 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+    name: gitlab-ci-runner
+  name: gitlab-ci-runner-cm
+  namespace: devops
+data:
+  REGISTER_NON_INTERACTIVE: "true"
+  REGISTER_LOCKED: "false"
+  METRICS_SERVER: "0.0.0.0:9100"
+  CI_SERVER_URL: "http://gitlab.devops.svc.cluster.local/ci"
+  RUNNER_REQUEST_CONCURRENCY: "4"
+  RUNNER_EXECUTOR: "kubernetes"
+  KUBERNETES_NAMESPACE: "devops"
+  KUBERNETES_PRIVILEGED: "true"
+  KUBERNETES_CPU_LIMIT: "1"
+  KUBERNETES_MEMORY_LIMIT: "1Gi"
+  KUBERNETES_SERVICE_CPU_LIMIT: "1"
+  KUBERNETES_SERVICE_MEMORY_LIMIT: "1Gi"
+  KUBERNETES_HELPER_CPU_LIMIT: "500m"
+  KUBERNETES_HELPER_MEMORY_LIMIT: "100Mi"
+  KUBERNETES_PULL_POLICY: "if-not-present"
+  KUBERNETES_TERMINATIONGRACEPERIODSECONDS: "10"
+  KUBERNETES_POLL_INTERVAL: "5"
+  KUBERNETES_POLL_TIMEOUT: "360"
+
+---
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+    name: gitlab-ci-runner
+  name: gitlab-ci-runner-scripts
+  namespace: devops
+data:
+  run.sh: |
+    #!/bin/bash
+    unregister() {
+        kill %1
+        echo "Unregistering runner ${RUNNER_NAME} ..."
+        /usr/bin/gitlab-ci-multi-runner unregister -t "$(/usr/bin/gitlab-ci-multi-runner list 2>&1 | tail -n1 | awk '{print $4}' | cut -d'=' -f2)" -n ${RUNNER_NAME}
+        exit $?
+    }
+    trap 'unregister' EXIT HUP INT QUIT PIPE TERM
+    echo "Registering runner ${RUNNER_NAME} ..."
+    /usr/bin/gitlab-ci-multi-runner register -r ${GITLAB_CI_TOKEN}
+    sed -i 's/^concurrent.*/concurrent = '"${RUNNER_REQUEST_CONCURRENCY}"'/' /home/gitlab-runner/.gitlab-runner/config.toml
+    echo "Starting runner ${RUNNER_NAME} ..."
+    /usr/bin/gitlab-ci-multi-runner run -n ${RUNNER_NAME} &
+    wait
+
+---
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: gitlab-ci-token
+  namespace: devops
+  labels:
+    name: gitlab-ci-runner
+data:
+  GITLAB_CI_TOKEN: V3hxTWZfN012bjh5bWhlZG13dmkK
+
+---
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gitlab-ci
+  namespace: devops
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: gitlab-ci
+  namespace: devops
+rules:
+  - apiGroups: [""]
+    resources: ["*"]
+    verbs: ["*"]
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: gitlab-ci
+  namespace: devops
+subjects:
+  - kind: ServiceAccount
+    name: gitlab-ci
+    namespace: devops
+roleRef:
+  kind: Role
+  name: gitlab-ci
+  apiGroup: rbac.authorization.k8s.io
+
+---
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: gitlab-ci-runner
+  namespace: devops
+  labels:
+    name: gitlab-ci-runner
+spec:
+  updateStrategy:
+    type: RollingUpdate
+  replicas: 2
+  selector:
+    matchLabels:
+      name: gitlab-ci-runner
+  serviceName: gitlab-ci-runner
+  template:
+    metadata:
+      labels:
+        name: gitlab-ci-runner
+    spec:
+      volumes:
+      - name: gitlab-ci-runner-scripts
+        projected:
+          sources:
+          - configMap:
+              name: gitlab-ci-runner-scripts
+              items:
+              - key: run.sh
+                path: run.sh
+                mode: 0755
+      serviceAccountName: gitlab-ci
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        supplementalGroups: [999]
+      containers:
+      - image: gitlab/gitlab-runner:latest
+        name: gitlab-ci-runner
+        command:
+        - /scripts/run.sh
+        envFrom:
+        - configMapRef:
+            name: gitlab-ci-runner-cm
+        - secretRef:
+            name: gitlab-ci-token
+        env:
+        - name: RUNNER_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        ports:
+        - containerPort: 9100
+          name: http-metrics
+          protocol: TCP
+        volumeMounts:
+        - name: gitlab-ci-runner-scripts
+          mountPath: "/scripts"
+          readOnly: true
+      restartPolicy: Always
