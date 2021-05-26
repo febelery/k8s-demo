@@ -1,25 +1,18 @@
 apiVersion: v1
-kind: Namespace
-metadata:
-  name: harbor-system
-
----
-
-apiVersion: v1
 kind: PersistentVolume
 metadata:
   name: harbor
-  namespace: harbor-system
+  namespace: kube-ops
   labels:
     app: harbor
 spec:
   capacity:
-    storage: 60Gi
+    storage: 30Gi
   accessModes:
   - ReadWriteOnce
   persistentVolumeReclaimPolicy: Retain
   nfs:
-    server: 192.168.1.7
+    server: 172.16.81.189
     path: /data/nfs/harbor
 
 ---
@@ -28,13 +21,13 @@ kind: PersistentVolumeClaim
 apiVersion: v1
 metadata:
   name: harbor
-  namespace: harbor-system
+  namespace: kube-ops
 spec:
   accessModes:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 60Gi
+      storage: 30Gi
   selector:
     matchLabels:
       app: harbor

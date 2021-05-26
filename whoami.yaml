@@ -1,108 +1,53 @@
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: appv1
-spec:
-  selector:
-    matchLabels:
-      app: appv1
-  template:
-    metadata:
-      labels:
-        use: test
-        app: appv1
-    spec:
-      containers:
-      - name: whoami
-        image: containous/whoami
-        ports:
-        - containerPort: 80
-          name: portv1
----
 apiVersion: v1
 kind: Service
 metadata:
-  name: appv1
+  name: whoami
 spec:
-  selector:
-    app: appv1
   ports:
-  - name: http
-    port: 80
-    targetPort: portv1
+    - protocol: TCP
+      name: web
+      port: 80
+  selector:
+    app: whoami
 ---
-apiVersion: apps/v1
 kind: Deployment
+apiVersion: apps/v1
 metadata:
-  name: appv2
+  name: whoami
+  labels:
+    app: whoami
 spec:
+  replicas: 2
   selector:
     matchLabels:
-      app: appv2
+      app: whoami
   template:
     metadata:
       labels:
-        use: test
-        app: appv2
+        app: whoami
     spec:
       containers:
-      - name: nginx
-        image: nginx
-        ports:
-        - containerPort: 80
-          name: portv2
+        - name: whoami
+          image: containous/whoami
+          ports:
+            - name: web
+              containerPort: 80
 ---
-
-apiVersion: traefik.containo.us/v1alpha1
-kind: Middleware
-metadata:
-  name: nginx-stripprefix
-spec:
-  stripPrefix:
-    prefixes:
-      - /whoami
-
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: appv2
-spec:
-  selector:
-    app: appv2
-  ports:
-  - name: http
-    port: 80
-    targetPort: portv2
----
-apiVersion: traefik.containo.us/v1alpha1
-kind: TraefikService
-metadata:
-  name: app-wrr
-spec:
-  weighted:
-    services:
-      - name: appv1
-        weight: 3  # 定义权重
-        port: 80
-        kind: Service  # 可选，默认就是 Service
-      - name: appv2
-        weight: 2
-        port: 80
----
-
 apiVersion: traefik.containo.us/v1alpha1
 kind: IngressRoute
 metadata:
-  name: wrringressroute
+  name: simpleingressroute
 spec:
   entryPoints:
-    - web
+    - websecure
   routes:
-  - match: Host(`febelery.com`) && PathPrefix(`/whoami`)
-    kind: Rule
-    services:
-    - name: app-wrr
-      kind: TraefikService
-    middlewares: 
-    - name: nginx-stripprefix
+    - match: Host(`chuanbaoguancha.cn`)
+      kind: Rule
+      services:
+        - name: whoami
+          port: 80
+  tls:
+    secretName: cbgc-tls
+    options:
+      namespace: kube-system
+      name: cbgc-tls

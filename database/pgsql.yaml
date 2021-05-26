@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: pgsql
-  namespace: database
+  namespace: kube-db
 data:
   POSTGRES_DB: pgsqldb
   POSTGRES_USER: pgsqladmin
@@ -14,7 +14,7 @@ apiVersion: v1
 kind: PersistentVolume
 metadata:
   name: pgsql
-  namespace: database
+  namespace: kube-db
 spec:
   capacity:          
     storage: 40Gi
@@ -22,10 +22,10 @@ spec:
   - ReadWriteOnce
   persistentVolumeReclaimPolicy: Retain
   mountOptions:
+  - vers=4.1
   - hard
-  - nfsvers=4.1    
   nfs:
-    server: 192.168.1.7
+    server: 172.16.81.189
     path: /data/nfs/pgsql
 
 ---
@@ -34,23 +34,24 @@ kind: PersistentVolumeClaim
 apiVersion: v1
 metadata:
   name: pgsql
-  namespace: database
+  namespace: kube-db
 spec:
   resources:
     requests:
-      storage: 40Gi 
+      storage: 15Gi 
   accessModes:
   - ReadWriteOnce
 
 ---
 
-kind: Deployment
+kind: StatefulSet
 apiVersion: apps/v1
 metadata:
   name: pgsql
-  namespace: database
+  namespace: kube-db
 spec:
   replicas: 1
+  serviceName: pgsql
   selector:
     matchLabels:
       name: pgsql
@@ -74,7 +75,7 @@ spec:
             memory: 256Mi
           limits:
             cpu: 2
-            memory: 1Gi
+            memory: 512Mi
         livenessProbe:
           exec:
             command: ["pg_isready","-h","localhost","-U","postgres"]
@@ -105,7 +106,7 @@ kind: Service
 apiVersion: v1
 metadata:
   name: pgsql
-  namespace: database
+  namespace: kube-db
 spec:
   ports:
     - name: pgsql
@@ -119,7 +120,7 @@ spec:
 # kind: IngressRouteTCP
 # metadata:
 #   name: pgsql-traefik-tcp
-#   namespace: database
+#   namespace: kube-db
 # spec:
 #   entryPoints:
 #   - pgsql
