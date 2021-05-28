@@ -47,6 +47,7 @@ data:
     echo "Registering runner ${RUNNER_NAME} ..."
     /usr/bin/gitlab-ci-multi-runner register -r ${GITLAB_CI_TOKEN}
     sed -i 's/^concurrent.*/concurrent = '"${RUNNER_REQUEST_CONCURRENCY}"'/' /home/gitlab-runner/.gitlab-runner/config.toml
+    sed -i '/"kubernetes"/a\ \ pre_clone_script="echo '115.29.207.74\ gitlab.chuanbaoguancha.cn' > etc/hosts"' /home/gitlab-runner/.gitlab-runner/config.toml
     echo "Starting runner ${RUNNER_NAME} ..."
     /usr/bin/gitlab-ci-multi-runner run -n ${RUNNER_NAME} &
     wait

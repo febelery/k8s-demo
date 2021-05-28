@@ -172,6 +172,24 @@ spec:
 apiVersion: traefik.containo.us/v1alpha1
 kind: IngressRoute
 metadata:
+  name: gitlab-http-route
+  namespace: kube-ops
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`gitlab.chuanbaoguancha.cn`)
+      kind: Rule
+      services:
+        - kind: Service
+          name: gitlab
+          port: 80
+
+---
+
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
   name: gitlab-https-route
   namespace: kube-ops
 spec:
